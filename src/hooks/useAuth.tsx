@@ -2,6 +2,8 @@ import { useState, useEffect, createContext, useContext, ReactNode } from 'react
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 
+const AUTH_STORAGE_KEY = 'sb-ajqhwowhkugidsdhwrqt-auth-token';
+
 interface AuthContextType {
   user: User | null;
   session: Session | null;
@@ -59,8 +61,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+    } catch (error: any) {
+      const isNetworkAuthFailure =
+        error?.message?.includes('Failed to fetch') ||
+        error?.message?.includes('fetch');
+
+      if (isNetworkAuthFailure) {
+        localStorage.removeItem(AUTH_STORAGE_KEY);
+        await supabase.auth.signOut({ scope: 'local' });
+
+        const { error: retryError } = await supabase.auth.signInWithPassword({ email, password });
+        if (retryError) throw retryError;
+        return;
+      }
+
+      throw error;
+    }
   };
 
   const signOut = async () => {
